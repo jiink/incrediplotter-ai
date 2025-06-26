@@ -164,6 +164,10 @@ def main():
     print("gemini's image is stored at " + png_path)
     img = Image.open(png_path)
     img.show()
+    # Save as BMP as well (convert and save, not just rename)
+    bmp_path = os.path.splitext(png_path)[0] + ".bmp"
+    img.convert("RGB").save(bmp_path, format="BMP")
+    print("Image also saved as BMP at " + bmp_path)
 
 
 if __name__ == "__main__":

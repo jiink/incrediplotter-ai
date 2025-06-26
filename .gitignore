@@ -1,2 +1,5 @@
-temp_recording.wav
-gemini-native-image.png
+*.wav
+*.png
+*.bmp
+*.gcode
+*.svg
