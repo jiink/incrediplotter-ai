@@ -1,3 +1,5 @@
+# SEE C:\jacob\.vpype.toml FOR GCODE CONFIGURATION!!!!
+
 from PIL import Image
 import os
 import subprocess
