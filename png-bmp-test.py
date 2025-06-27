@@ -3,7 +3,7 @@
 from PIL import Image
 import os
 import subprocess
-png_path = 'gemini-native-image.png'
+png_path = 'cactus,-6z0m7.png'
 print("gemini's image is stored at " + png_path)
 img = Image.open(png_path)
 # Convert to grayscale, apply threshold, then save as 1-bit (black and white) BMP without dithering
@@ -16,7 +16,7 @@ print("Image also saved as 2-color (black and white, thresholded) BMP at " + bmp
 
 autotrace_input = bmp_path
 autotrace_output = os.path.splitext(png_path)[0] + ".svg"
-line_cmd = f'"C:\\Program Files\\AutoTrace\\autotrace.exe" -centerline -background-color FFFFFF -color-count 2 -output-file "{autotrace_output}" -output-format svg "{autotrace_input}"'
+line_cmd = f'"C:\\Program Files\\AutoTrace\\autotrace.exe" -background-color FFFFFF -color-count 2 -output-file "{autotrace_output}" -output-format svg "{autotrace_input}"'
 result = subprocess.run(line_cmd, shell=True)
 if result.returncode != 0:
     print("AutoTrace command failed with return code", result.returncode)

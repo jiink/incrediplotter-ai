@@ -3,3 +3,5 @@
 *.bmp
 *.gcode
 *.svg
+*.pyc
+*.mp3

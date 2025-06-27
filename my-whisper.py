@@ -62,13 +62,13 @@ def main():
     # 2. Set up and start the audio stream
     got_phrase = False
     try:
+        print("\n" + "="*40)
+        input("Press ENTER to start recording...")
         # The 'with' statement ensures the stream is properly closed
         with sd.InputStream(samplerate=SAMPLE_RATE,
                             channels=1,
                             dtype='float32',
                             callback=audio_callback):
-            print("\n" + "="*40)
-            input("Press ENTER to start recording...")
             print("🔴 Recording... Press ENTER to stop.")
 
             # The recording happens in the background via the callback

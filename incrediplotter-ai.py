@@ -11,11 +11,17 @@ from io import BytesIO
 import base64
 import os
 import subprocess
+import requests
+import random
+import string
+from tiktok_voice import tts, Voice
+import threading
 
 # --- Configuration ---
 MODEL_TYPE = "base.en"  # Options: "tiny", "base", "small", "medium", "large"
 SAMPLE_RATE = 16000  # Whisper internal sample rate is 16kHz
 FILENAME = "temp_recording.wav"
+MOONRAKER_URL = "http://localhost"
 
 def remove_specific_words(text_string, words_to_remove):
     """
@@ -69,13 +75,13 @@ def get_phrase_from_user():
     # 2. Set up and start the audio stream
     got_phrase = False
     try:
+        print("\n" + "="*40)
+        input("Press ENTER to start recording...")
         # The 'with' statement ensures the stream is properly closed
         with sd.InputStream(samplerate=SAMPLE_RATE,
                             channels=1,
                             dtype='float32',
                             callback=audio_callback):
-            print("\n" + "="*40)
-            input("Press ENTER to start recording...")
             print("🔴 Recording... Press ENTER to stop.")
 
             # The recording happens in the background via the callback
@@ -120,7 +126,38 @@ def get_phrase_from_user():
     what_to_draw = remove_specific_words(transcribed_text.strip(), ["draw", "a"]).replace('.', '')
     return what_to_draw
 
+def ai_comment_on_subject(subject):
+    env_var_name = "GEMINI_KEY"
+    api_key = os.getenv(env_var_name)
+    if api_key is None:
+        raise ValueError(env_var_name + " environment variable not set")
 
+    client = genai.Client(api_key=api_key)
+
+    contents = ('A user is requesting the the following subject be drawn. '
+                'Make a snarky comment to the user about this. '
+                f'The subject is "{subject}"')
+
+    response = client.models.generate_content(
+        model="gemini-2.0-flash-lite",
+        contents=contents,
+        config=types.GenerateContentConfig(
+        response_modalities=['TEXT']
+        )
+    )
+    text_response = ''
+    for part in response.candidates[0].content.parts:
+        if part.text is not None:
+            text_response += part.text
+    # Kick off another thread to do tts
+    if text_response.strip():
+        tts(text_response, Voice.US_FEMALE_1, "output.mp3", play_sound=True)
+        tts_thread = threading.Thread(
+            target=tts, 
+            args=(text_response, Voice.US_FEMALE_1, "output.mp3"),
+            kwargs={'play_sound': True}
+        )
+        tts_thread.start()
 
 # see https://ai.google.dev/gemini-api/docs/image-generation#python
 def generate_drawing_png(phrase_to_draw):
@@ -134,13 +171,14 @@ def generate_drawing_png(phrase_to_draw):
     contents = ('Please generate an image of a '
                 'A monochrome unshaded simple thin line art of a'
                 + phrase_to_draw +
-                'with a white background')
+                'with a white background. '
+                'Also, in your textual reply, make a snarky comment about what the subject the user is requesting (Not the style, just the subject).')
 
     response = client.models.generate_content(
         model="gemini-2.0-flash-preview-image-generation",
         contents=contents,
         config=types.GenerateContentConfig(
-        response_modalities=['TEXT', 'IMAGE']
+        response_modalities=['IMAGE']
         )
     )
     for part in response.candidates[0].content.parts:
@@ -148,11 +186,13 @@ def generate_drawing_png(phrase_to_draw):
             print(part.text)
         elif part.inline_data is not None:
             image = Image.open(BytesIO((part.inline_data.data)))
-            img_save_path = 'gemini-native-image.png'
+            first_word = phrase_to_draw.strip().split()[0]
+            rand_str = ''.join(random.choices(string.ascii_lowercase + string.digits, k=5))
+            img_save_path = f"{first_word}-{rand_str}.png"
             image.save(img_save_path)
     return img_save_path
 
-
+# SEE C:\Users\jacob\.vpype.toml FOR GCODE CONFIGURATION!!!!
 def png_to_gcode(png_path):
     img = Image.open(png_path)
     # Convert to grayscale, apply threshold, then save as 1-bit (black and white) BMP without dithering
@@ -195,24 +235,88 @@ def png_to_gcode(png_path):
         return ''
     return output_name
 
+
+def moonraker_upload_gcode(file_path):
+    """Uploads a G-code file to Moonraker."""
+    if not os.path.exists(file_path):
+        print(f"Error: G-code file not found at {file_path}")
+        return None
+
+    file_name = os.path.basename(file_path)
+    url = f"{MOONRAKER_URL}/server/files/upload"
+    print(f"Uploading {file_name} to Moonraker...")
+
+    try:
+        with open(file_path, "rb") as f:
+            files = {'file': (file_name, f, 'application/octet-stream')}
+            response = requests.post(url, files=files)
+            response.raise_for_status()  # Raise an exception for bad status codes
+            print("File uploaded successfully.")
+            return file_name
+    except requests.exceptions.RequestException as e:
+        print(f"Error uploading file: {e}")
+        return None
+
+
+def moonraker_start_print(file_name):
+    """Starts a print from the uploaded G-code file."""
+    if not file_name:
+        print("Cannot start print, no file was uploaded.")
+        return
+
+    url = f"{MOONRAKER_URL}/printer/print/start?filename={file_name}"
+    print(f"Requesting to start print of {file_name}...")
+
+    try:
+        response = requests.post(url)
+        response.raise_for_status()
+        print("Print started successfully.")
+    except requests.exceptions.RequestException as e:
+        print(f"Error starting print: {e}")
+
+
+def send_and_start_plotting(gcode_path):
+    if not os.path.exists(gcode_path):
+        print(f"G-code file does not exist: {gcode_path}")
+        return 1
+    uploaded_filename = moonraker_upload_gcode(gcode_path)
+    if uploaded_filename:
+        moonraker_start_print(uploaded_filename)
+    else:
+        return 2
+    return 0
+    
+
 def main():
-    # what_to_draw = ''
-    # while what_to_draw == '':
-    #     what_to_draw = get_phrase_from_user()
-    # print('will draw: "' + what_to_draw + '"')
-    png_path = generate_drawing_png('apple')
+    what_to_draw = ''
+    while what_to_draw == '':
+        what_to_draw = get_phrase_from_user()
+    print('will draw: "' + what_to_draw + '"')
+    tts_thread = threading.Thread(
+        target=ai_comment_on_subject,
+        args=(what_to_draw)
+    )
+    tts_thread.start()
+    png_path = generate_drawing_png(what_to_draw)
     if png_path == '':
         print('png_path is empty. terminating.')
-        return
+        return 1
     print("gemini's image is stored at " + png_path)
     img = Image.open(png_path)
-    img.show()
+    #img.show()
     gcode_path = png_to_gcode(png_path)
     if gcode_path == '':
         print('gcode_path is empty. terminating.')
-        return
-    
-
+        return 1
+    gcode_size_bytes = os.path.getsize(gcode_path)
+    if gcode_size_bytes > 4000000:
+        print(f'The G-code is huge at {gcode_size_bytes/1000000:.2f} MB. Not gonna print that one.')
+        return 1
+    err = send_and_start_plotting(gcode_path)
+    if err != 0:
+        print(f"send_and_start_printing error {err}")
+    print("Success! Quitting.")
+    return 0
 
 if __name__ == "__main__":
     main()
