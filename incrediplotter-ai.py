@@ -149,15 +149,8 @@ def ai_comment_on_subject(subject):
     for part in response.candidates[0].content.parts:
         if part.text is not None:
             text_response += part.text
-    # Kick off another thread to do tts
     if text_response.strip():
         tts(text_response, Voice.US_FEMALE_1, "output.mp3", play_sound=True)
-        tts_thread = threading.Thread(
-            target=tts, 
-            args=(text_response, Voice.US_FEMALE_1, "output.mp3"),
-            kwargs={'play_sound': True}
-        )
-        tts_thread.start()
 
 # see https://ai.google.dev/gemini-api/docs/image-generation#python
 def generate_drawing_png(phrase_to_draw):
@@ -171,14 +164,13 @@ def generate_drawing_png(phrase_to_draw):
     contents = ('Please generate an image of a '
                 'A monochrome unshaded simple thin line art of a'
                 + phrase_to_draw +
-                'with a white background. '
-                'Also, in your textual reply, make a snarky comment about what the subject the user is requesting (Not the style, just the subject).')
+                'with a white background. ')
 
     response = client.models.generate_content(
         model="gemini-2.0-flash-preview-image-generation",
         contents=contents,
         config=types.GenerateContentConfig(
-        response_modalities=['IMAGE']
+        response_modalities=['TEXT', 'IMAGE']
         )
     )
     for part in response.candidates[0].content.parts:
@@ -294,7 +286,7 @@ def main():
     print('will draw: "' + what_to_draw + '"')
     tts_thread = threading.Thread(
         target=ai_comment_on_subject,
-        args=(what_to_draw)
+        args=(what_to_draw,)
     )
     tts_thread.start()
     png_path = generate_drawing_png(what_to_draw)
