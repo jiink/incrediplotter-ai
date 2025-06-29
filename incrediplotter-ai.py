@@ -126,6 +126,7 @@ def get_phrase_from_user():
             print("="*40 + "\n")
 
         except Exception as e:
+            traceback.print_exc()
             print(f"\nAn error occurred: {e}")
             print("Please ensure your microphone is connected and configured correctly.")
             return ""
@@ -294,6 +295,16 @@ def send_and_start_plotting(gcode_path):
     else:
         return 2
     return 0
+
+old_tts_engine = None
+
+def old_tts_say(message):
+    global old_tts_engine
+    if old_tts_engine is None:
+        old_tts_engine = pyttsx3.init()
+    old_tts_engine.setProperty('rate', 300)
+    old_tts_engine.say(message)
+    old_tts_engine.runAndWait()
     
 
 def main():
@@ -335,10 +346,7 @@ def main():
     except Exception as e:
         print(f"{e}")
         traceback.print_exc()
-        engine = pyttsx3.init()
-        engine.setProperty('rate', 300)
-        engine.say(f"Crash with error: {e}")
-        engine.runAndWait()
+        old_tts_say(f'Crash with error: {e}')
 
 
 if __name__ == "__main__":
