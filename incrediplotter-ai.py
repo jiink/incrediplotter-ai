@@ -66,10 +66,9 @@ def init_whisper():
         return None
 
 
-def get_phrase_from_user(whisper_model):
+def get_phrase_from_user(model):
     # A list to store audio frames
     recorded_frames = []
-
     def audio_callback(indata, frames, time_info, status):
         """This function is called for each audio block from the microphone."""
         if status:
@@ -81,6 +80,7 @@ def get_phrase_from_user(whisper_model):
     valid_drawing_phrase = False
     transcribed_text = ""
     while not valid_drawing_phrase:
+        recorded_frames = []
         transcribed_text = ""
         try:
             print("\n" + "="*40)
@@ -152,7 +152,7 @@ def ai_comment_on_subject(subject):
     client = genai.Client(api_key=api_key)
 
     contents = ('A user is requesting the the following subject be drawn. '
-                'Make a snarky comment to the user about this. '
+                'Make a snarky comment to the user about this; dont be afraid to be a bit of a jerk. '
                 f'The subject is "{subject}"')
 
     response = client.models.generate_content(
