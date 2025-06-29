@@ -19,12 +19,14 @@ import threading
 from playsound import playsound
 import pyttsx3
 import traceback
+import serial
 
 # --- Configuration ---
 MODEL_TYPE = "base.en"  # Options: "tiny", "base", "small", "medium", "large"
 SAMPLE_RATE = 16000  # Whisper internal sample rate is 16kHz
 FILENAME = "temp_recording.wav"
 MOONRAKER_URL = "http://localhost"
+VIRTUAL_COM_PORT = "COM4"
 
 def remove_specific_words(text_string, words_to_remove):
     """
@@ -84,7 +86,7 @@ def get_phrase_from_user(model):
         transcribed_text = ""
         try:
             print("\n" + "="*40)
-            playsound("ready.mp3")
+            keypad_show_bg_color("00A030")
             user_input = input("Press Q to quit, or ENTER to start recording...")
             if user_input.strip().lower() == 'q':
                 return "QUIT"
@@ -93,6 +95,7 @@ def get_phrase_from_user(model):
                                 channels=1,
                                 dtype='float32',
                                 callback=audio_callback):
+                keypad_show_bg_color("FFFFFF")
                 print("🔴 Recording... Press ENTER to stop.")
 
                 # The recording happens in the background via the callback
@@ -100,6 +103,7 @@ def get_phrase_from_user(model):
                 input() # This second input() call is what stops the recording
 
             print("⏹️ Recording stopped.")
+            keypad_show_bg_color("000077")
 
             # 3. Process the recorded audio
             if not recorded_frames:
@@ -166,7 +170,7 @@ def ai_comment_on_subject(subject):
     for part in response.candidates[0].content.parts:
         if part.text is not None:
             text_response += part.text
-    text_response = text_response.strip().replace("*", "")
+    text_response = text_response.strip().replace("*", "").replace("...", "")
     if text_response:
         tts(text_response, Voice.US_FEMALE_1, "output.mp3", play_sound=True)
 
@@ -300,6 +304,7 @@ def send_and_start_plotting(gcode_path):
 old_tts_engine = None
 
 def old_tts_say(message):
+    print(message)
     global old_tts_engine
     if old_tts_engine is None:
         old_tts_engine = pyttsx3.init()
@@ -308,12 +313,88 @@ def old_tts_say(message):
     old_tts_engine.runAndWait()
     
 
+def keypad_send_command(port_name: str, command: str, baud_rate: int = 9600):
+    """
+    Sends a command string over the specified COM port.
+
+    Args:
+        port_name (str): The name of the COM port (e.g., 'COM4').
+        command (str): The command string to send.
+        baud_rate (int): The baud rate for the serial communication.
+    """
+    try:
+        # Open the serial port
+        # 'timeout=1' ensures that read/write operations will not block indefinitely.
+        with serial.Serial(port_name, baud_rate, timeout=1) as ser:
+            print(f"--- Connected to {port_name} at {baud_rate} baud ---")
+            print(f"Sending command: '{command}'")
+
+            # Encode the command string to bytes (UTF-8 is a common encoding for serial)
+            # Add a newline character at the end as is common for many serial protocols
+            command_bytes = (command + '\n').encode('utf-8')
+            ser.write(command_bytes)
+            print("Command sent successfully.")
+            # Give a small delay to ensure the data is fully transmitted before closing
+            time.sleep(0.1)
+
+    except serial.SerialException as e:
+        print(f"Error: Could not open or communicate with port {port_name}. {e}")
+        print("Please ensure the port is available and not in use by another application.")
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
+
+def keypad_show_bg_color(hex_color, port_name = VIRTUAL_COM_PORT):
+    """
+    Constructs and sends a command to set the background color.
+
+    Args:
+        port_name (str): The name of the COM port (e.g., 'COM4').
+        hex_color (str): A 6-digit hexadecimal color code (e.g., 'FF0000' for red).
+                         The function will prepend '0x' if not present, but expects
+                         a valid 6-digit hex string.
+    """
+    # Ensure the hex color is properly formatted (e.g., '00FF00' or '0x00FF00')
+    if not hex_color.startswith('0x'):
+        hex_color = hex_color.upper() # Standardize to uppercase
+    else:
+        hex_color = hex_color[2:].upper() # Remove '0x' and uppercase
+
+    if not all(c in '0123456789ABCDEF' for c in hex_color) or len(hex_color) != 6:
+        print(f"Invalid hex color code: {hex_color}. Please use a 6-digit hex code (e.g., '00FF00').")
+        return
+
+    command = f"SHOW_BG_COLOR {hex_color}"
+    keypad_send_command(port_name, command)
+
+def keypad_show_text(text_content, port_name = VIRTUAL_COM_PORT):
+    """
+    Constructs and sends a command to display text.
+
+    Args:
+        port_name (str): The name of the COM port (e.g., 'COM4').
+        text_content (str): The text string to display.
+    """
+    if not text_content.strip():
+        print("Text content cannot be empty. Please provide some text to display.")
+        return
+
+    # Escape any special characters if necessary, though for simple text, it might not be needed.
+    # For this example, we'll assume basic text and send it as is.
+    command = f"SHOW_TEXT {text_content.strip()}"
+    keypad_send_command(port_name, command)
+
+
 def main():
+    keypad_show_bg_color("000000")
+    keypad_show_text("-_-")
     whisper_model = init_whisper()
     if whisper_model == None:
-        print("Whisper init fail")
+        old_tts_say("Whisper init fail")
         return 1
-    
+    keypad_show_bg_color("000040")
+    keypad_show_text(":O")
+    playsound("ready.mp3")
+    keypad_show_text(":T")
     try:
         done = False
         while not done:
@@ -321,8 +402,9 @@ def main():
             while what_to_draw == '':
                 what_to_draw = get_phrase_from_user(whisper_model)
             if what_to_draw == 'QUIT':
-                print("Quit requested")
+                old_tts_say("Quit requested")
                 done = True
+                continue
             print('will draw: "' + what_to_draw + '"')
             tts_thread = threading.Thread(
                 target=ai_comment_on_subject,
@@ -331,22 +413,22 @@ def main():
             tts_thread.start()
             png_path = generate_drawing_png(what_to_draw)
             if png_path == '':
-                print('png_path is empty. terminating.')
+                old_tts_say('png_path is empty. terminating.')
                 return 1
             print("gemini's image is stored at " + png_path)
             img = Image.open(png_path)
             #img.show()
             gcode_path = png_to_gcode(png_path)
             if gcode_path == '':
-                print('gcode_path is empty. terminating.')
+                old_tts_say('gcode_path is empty. terminating.')
                 return 1
             gcode_size_bytes = os.path.getsize(gcode_path)
             if gcode_size_bytes > 4000000:
-                print(f'The G-code is huge at {gcode_size_bytes/1000000:.2f} MB. Not gonna print that one.')
+                old_tts_say(f'The G-code is huge at {gcode_size_bytes/1000000:.2f} MB. Not gonna print that one.')
                 return 1
             err = send_and_start_plotting(gcode_path)
             if err != 0:
-                print(f"send_and_start_printing error {err}")
+                old_tts_say(f"send_and_start_printing error {err}")
             print("Next loop.")
         print("Exiting.")
     except Exception as e:
