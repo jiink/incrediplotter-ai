@@ -5,3 +5,5 @@
 *.svg
 *.pyc
 *.mp3
+!ready.mp3
+!nicetry.mp3

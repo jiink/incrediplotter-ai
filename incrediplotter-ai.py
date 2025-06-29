@@ -16,6 +16,9 @@ import random
 import string
 from tiktok_voice import tts, Voice
 import threading
+from playsound import playsound
+import pyttsx3
+import traceback
 
 # --- Configuration ---
 MODEL_TYPE = "base.en"  # Options: "tiny", "base", "small", "medium", "large"
@@ -74,57 +77,69 @@ def get_phrase_from_user():
 
     # 2. Set up and start the audio stream
     got_phrase = False
-    try:
-        print("\n" + "="*40)
-        input("Press ENTER to start recording...")
-        # The 'with' statement ensures the stream is properly closed
-        with sd.InputStream(samplerate=SAMPLE_RATE,
-                            channels=1,
-                            dtype='float32',
-                            callback=audio_callback):
-            print("🔴 Recording... Press ENTER to stop.")
+    valid_drawing_phrase = False
+    transcribed_text = ""
+    while not valid_drawing_phrase:
+        transcribed_text = ""
+        try:
+            print("\n" + "="*40)
+            playsound("ready.mp3")
+            user_input = input("Press Q to quit, or ENTER to start recording...")
+            if user_input.strip().lower() == 'q':
+                return "QUIT"
+            # The 'with' statement ensures the stream is properly closed
+            with sd.InputStream(samplerate=SAMPLE_RATE,
+                                channels=1,
+                                dtype='float32',
+                                callback=audio_callback):
+                print("🔴 Recording... Press ENTER to stop.")
 
-            # The recording happens in the background via the callback
-            # The main thread waits here for the user to press Enter again
-            input() # This second input() call is what stops the recording
+                # The recording happens in the background via the callback
+                # The main thread waits here for the user to press Enter again
+                input() # This second input() call is what stops the recording
 
-        print("⏹️ Recording stopped.")
+            print("⏹️ Recording stopped.")
 
-        # 3. Process the recorded audio
-        if not recorded_frames:
-            print("No audio recorded. Exiting.")
-            return
+            # 3. Process the recorded audio
+            if not recorded_frames:
+                print("No audio recorded.")
+                continue
 
-        print("Processing audio...")
-        # Concatenate all the recorded frames into a single NumPy array
-        recording = np.concatenate(recorded_frames, axis=0)
+            print("Processing audio...")
+            # Concatenate all the recorded frames into a single NumPy array
+            recording = np.concatenate(recorded_frames, axis=0)
 
-        # Save the recording to a WAV file (optional, but good for debugging)
-        write(FILENAME, SAMPLE_RATE, recording)
-        print(f"Recording saved to {FILENAME}")
+            # Save the recording to a WAV file (optional, but good for debugging)
+            write(FILENAME, SAMPLE_RATE, recording)
+            print(f"Recording saved to {FILENAME}")
 
-        # 4. Transcribe the audio
-        print("Transcribing audio... This may take a moment.")
-        result = model.transcribe(FILENAME)
-        transcribed_text = result["text"]
-        got_phrase = True
+            # 4. Transcribe the audio
+            print("Transcribing audio...")
+            result = model.transcribe(FILENAME)
+            transcribed_text = result["text"].strip()
+            got_phrase = True
 
-        # 5. Print the result
-        print("\n" + "="*40)
-        print("Whisper heard:")
-        print(f"-> {transcribed_text.strip()}")
-        print("="*40 + "\n")
+            # 5. Print the result
+            print("\n" + "="*40)
+            print("Whisper heard:")
+            print(f"-> {transcribed_text}")
+            print("="*40 + "\n")
 
-    except Exception as e:
-        print(f"\nAn error occurred: {e}")
-        print("Please ensure your microphone is connected and configured correctly.")
-
-    if not got_phrase:
-        print("Terminating early.")
-        return ""
-    
-    what_to_draw = remove_specific_words(transcribed_text.strip(), ["draw", "a"]).replace('.', '')
+        except Exception as e:
+            print(f"\nAn error occurred: {e}")
+            print("Please ensure your microphone is connected and configured correctly.")
+            return ""
+        
+        if not got_phrase:
+            print("Didn't get a phrase.")
+        else:
+            valid_drawing_phrase = transcribed_text.lower().startswith("draw ")
+            if not valid_drawing_phrase:
+                print(f'Not a valid drawing phrase: "{transcribed_text}"')
+                playsound("nicetry.mp3")    
+    what_to_draw = remove_specific_words(transcribed_text, ["draw", "a", "an"]).replace('.', '')
     return what_to_draw
+
 
 def ai_comment_on_subject(subject):
     env_var_name = "GEMINI_KEY"
@@ -149,8 +164,10 @@ def ai_comment_on_subject(subject):
     for part in response.candidates[0].content.parts:
         if part.text is not None:
             text_response += part.text
-    if text_response.strip():
+    text_response = text_response.strip().replace("*", "")
+    if text_response:
         tts(text_response, Voice.US_FEMALE_1, "output.mp3", play_sound=True)
+
 
 # see https://ai.google.dev/gemini-api/docs/image-generation#python
 def generate_drawing_png(phrase_to_draw):
@@ -161,8 +178,8 @@ def generate_drawing_png(phrase_to_draw):
 
     client = genai.Client(api_key=api_key)
 
-    contents = ('Please generate an image of a '
-                'A monochrome unshaded simple thin line art of a'
+    contents = ('Please generate an image of '
+                'a monochrome unshaded simple thin line art of a'
                 + phrase_to_draw +
                 'with a white background. ')
 
@@ -280,35 +297,49 @@ def send_and_start_plotting(gcode_path):
     
 
 def main():
-    what_to_draw = ''
-    while what_to_draw == '':
-        what_to_draw = get_phrase_from_user()
-    print('will draw: "' + what_to_draw + '"')
-    tts_thread = threading.Thread(
-        target=ai_comment_on_subject,
-        args=(what_to_draw,)
-    )
-    tts_thread.start()
-    png_path = generate_drawing_png(what_to_draw)
-    if png_path == '':
-        print('png_path is empty. terminating.')
-        return 1
-    print("gemini's image is stored at " + png_path)
-    img = Image.open(png_path)
-    #img.show()
-    gcode_path = png_to_gcode(png_path)
-    if gcode_path == '':
-        print('gcode_path is empty. terminating.')
-        return 1
-    gcode_size_bytes = os.path.getsize(gcode_path)
-    if gcode_size_bytes > 4000000:
-        print(f'The G-code is huge at {gcode_size_bytes/1000000:.2f} MB. Not gonna print that one.')
-        return 1
-    err = send_and_start_plotting(gcode_path)
-    if err != 0:
-        print(f"send_and_start_printing error {err}")
-    print("Success! Quitting.")
-    return 0
+    try:
+        done = False
+        while not done:
+            what_to_draw = ''
+            while what_to_draw == '':
+                what_to_draw = get_phrase_from_user()
+            if what_to_draw == 'QUIT':
+                print("Quit requested")
+                done = True
+            print('will draw: "' + what_to_draw + '"')
+            tts_thread = threading.Thread(
+                target=ai_comment_on_subject,
+                args=(what_to_draw,)
+            )
+            tts_thread.start()
+            png_path = generate_drawing_png(what_to_draw)
+            if png_path == '':
+                print('png_path is empty. terminating.')
+                return 1
+            print("gemini's image is stored at " + png_path)
+            img = Image.open(png_path)
+            #img.show()
+            gcode_path = png_to_gcode(png_path)
+            if gcode_path == '':
+                print('gcode_path is empty. terminating.')
+                return 1
+            gcode_size_bytes = os.path.getsize(gcode_path)
+            if gcode_size_bytes > 4000000:
+                print(f'The G-code is huge at {gcode_size_bytes/1000000:.2f} MB. Not gonna print that one.')
+                return 1
+            err = send_and_start_plotting(gcode_path)
+            if err != 0:
+                print(f"send_and_start_printing error {err}")
+            print("Next loop.")
+        print("Exiting.")
+    except Exception as e:
+        print(f"{e}")
+        traceback.print_exc()
+        engine = pyttsx3.init()
+        engine.setProperty('rate', 300)
+        engine.say(f"Crash with error: {e}")
+        engine.runAndWait()
+
 
 if __name__ == "__main__":
     main()
