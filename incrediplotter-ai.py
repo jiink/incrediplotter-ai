@@ -214,9 +214,11 @@ def png_to_gcode(png_path):
     threshold = 128
     gray = img.convert('L')
     bw = gray.point(lambda x: 255 if x > threshold else 0, mode='1')
+    # Flip the image vertically
+    bw_flipped = bw.transpose(Image.FLIP_TOP_BOTTOM)
     bmp_path = os.path.splitext(png_path)[0] + ".bmp"
-    bw.save(bmp_path, format="BMP")
-    print("Image also saved as 2-color (black and white, thresholded) BMP at " + bmp_path)
+    bw_flipped.save(bmp_path, format="BMP")
+    print("Image also saved as 2-color (black and white, thresholded, flipped vertically) BMP at " + bmp_path)
 
     autotrace_input = bmp_path
     autotrace_output = os.path.splitext(png_path)[0] + ".svg"
