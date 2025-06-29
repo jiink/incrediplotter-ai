@@ -52,20 +52,21 @@ def remove_specific_words(text_string, words_to_remove):
 
     return modified_string
 
-def get_phrase_from_user():
-    print("Starting Whisper...")
 
-    # 1. Load the Whisper model
+def init_whisper():
     try:
         print(f"Loading Whisper model '{MODEL_TYPE}'...")
         # This will download the model on the first run
         model = whisper.load_model(MODEL_TYPE)
         print("Whisper model loaded successfully.")
+        return model
     except Exception as e:
         print(f"Error loading Whisper model: {e}")
         print("Please ensure you have a working internet connection for the first run.")
-        return
+        return None
 
+
+def get_phrase_from_user(whisper_model):
     # A list to store audio frames
     recorded_frames = []
 
@@ -308,12 +309,17 @@ def old_tts_say(message):
     
 
 def main():
+    whisper_model = init_whisper()
+    if whisper_model == None:
+        print("Whisper init fail")
+        return 1
+    
     try:
         done = False
         while not done:
             what_to_draw = ''
             while what_to_draw == '':
-                what_to_draw = get_phrase_from_user()
+                what_to_draw = get_phrase_from_user(whisper_model)
             if what_to_draw == 'QUIT':
                 print("Quit requested")
                 done = True
