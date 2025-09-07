@@ -1,4 +1,4 @@
-The star of the show is `incrediplotter.py`
+The star of the show is `incrediplotter-ai.py`
 
 > [!NOTE]  
 > As a thrown-together hobby project, this is not up to my own code quality / documentation standards.
