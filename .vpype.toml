@@ -1,0 +1,37 @@
+# For the gwrite command from the vpype-gcode plugin.
+# This goes at the root of your user directory,
+# e.g. C:\Users\You\.vpype.toml
+[gwrite.klipper_pen]
+
+unit = "mm"
+
+# This is because of where I put my limit switches
+vertical_flip = true
+
+document_start = """
+G28 X
+G28 Y
+G28 Z
+G21
+G90
+M220 S200 ; 200% speed
+; Plotting started by vpype
+"""
+
+document_end = """
+PEN_UP
+G0 X0 Y0
+M84
+; Plotting finished
+"""
+
+# before drawing a line
+line_start = "PEN_UP\n"
+
+# how to draw the first point of the line
+segment_first = "G0 X{x:.3f} Y{y:.3f}\nPEN_DOWN\n"
+
+segment = "G1 X{x:.3f} Y{y:.3f}\n"
+
+# could lift the pen here and at the start of the doc instead... either way works.
+line_end = ""
